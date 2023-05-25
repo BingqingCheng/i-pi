@@ -129,7 +129,7 @@ class Dynamics(Motion):
 
         fixdof = len(self.fixatoms) * 3 * self.beads.nbeads
         if self.fixcom:
-            fixdof += 3
+            fixdof += 6
         return fixdof
 
     def bind(self, ens, beads, nm, cell, bforce, prng, omaker):
@@ -368,6 +368,54 @@ class DummyIntegrator(dobject):
                 self.beads.p[:, i:na3:3] -= m * pcom
 
             self.ensemble.eens += dens * 0.5 / Mnb
+
+            # fix angular momentum
+            na = self.beads.natoms
+            q = dstrip(self.beads.q)
+            # reshape everything into the "standard form"
+            positions = np.zeros((na * nb, 3))
+            velocities = np.zeros((na * nb, 3))
+            masses = np.zeros(na * nb)
+            for b in range(nb):
+                masses[b*na:(b+1)*na] = m[b,:] 
+                for i in range(3):
+                    positions[b*na:(b+1)*na,i] = self.beads.q[b, i:na3:3]
+                    velocities[b*na:(b+1)*na,i] = self.beads.p[b, i:na3:3] / masses[b*na:(b+1)*na]
+
+            # Compute the center of mass
+            center_of_mass = np.sum(positions * masses[:, np.newaxis], axis=0) / np.sum(masses)
+
+            # Compute the relative positions
+            relative_positions = positions - center_of_mass
+
+            # Compute the angular momentum
+            angular_momentum = np.sum(np.cross(relative_positions, velocities * masses[:, np.newaxis]),axis=0)
+
+            # compute the moment of inertia tensor (I)
+            moment_of_inertia = np.zeros((3,3))
+            for i, r in enumerate(relative_positions):
+                moment_of_inertia[0,0] += (r[1]**2.+r[2]**2.) * masses[i]
+                moment_of_inertia[1,1] += (r[0]**2.+r[2]**2.) * masses[i]
+                moment_of_inertia[2,2] += (r[0]**2.+r[1]**2.) * masses[i]
+                moment_of_inertia[0,1] -= (r[0]*r[1]) * masses[i]
+                moment_of_inertia[0,2] -= (r[0]*r[2]) * masses[i]
+                moment_of_inertia[1,2] -= (r[1]*r[2]) * masses[i]
+
+            moment_of_inertia[1,0] = moment_of_inertia[0,1]
+            moment_of_inertia[2,0] = moment_of_inertia[0,2]
+            moment_of_inertia[2,1] = moment_of_inertia[1,2]
+
+            #Compute the angular velocity tensor
+            angular_velocity = np.dot(np.linalg.inv(moment_of_inertia), angular_momentum)
+
+            # Deduct the angular velocity from the particle velocities
+            velocities_adjusted = velocities - np.cross(angular_velocity,relative_positions)
+
+            # momentum adjusted
+            for b in range(nb):
+                for i in range(3):
+                    p_now = velocities_adjusted[b*na:(b+1)*na,i] * masses[b*na:(b+1)*na]
+                    self.beads.p[b, i:na3:3] = p_now
 
         if len(self.fixatoms) > 0:
             for bp in self.beads.p:

@@ -1024,7 +1024,7 @@ class Properties(dobject):
             pcm = np.tile(
                 np.sqrt(M * Constants.kb * self.ensemble.temp * self.beads.nbeads), 3
             )
-            vcm = np.tile(pcm / M, self.beads.natoms)
+            vcm = 2 * np.tile(pcm / M, self.beads.natoms)
 
             self.beads.p += self.beads.m3 * vcm
 
