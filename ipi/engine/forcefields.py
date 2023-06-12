@@ -15,7 +15,6 @@ import json
 import sys
 
 import numpy as np
-from scipy.spatial.distance import pdist
 
 from ipi.utils.softexit import softexit
 from ipi.utils.messages import verbosity
@@ -686,7 +685,7 @@ class FFDebyePW(ForceField):
 
         # a socket to the communication library is created or linked
         # NEVER DO PBC -- forces here are computed without.
-        super(FFDebye, self).__init__(latency, name, pars, dopbc=False)
+        super(FFDebyePW, self).__init__(latency, name, pars, dopbc=False)
 
         if H is None:
             raise ValueError("Must provide the Hessian for the Debye crystal.")
@@ -707,7 +706,7 @@ class FFDebyePW(ForceField):
 
         q_ref = np.copy(self.xref).reshape((-1, 3))
         nat = len(q_ref)
-        # Calculate the differences in coordinates. Shape: [nat, nat, 3].
+        # Calculate the pairwise displacements in Cartesian coordinates. Shape: [nat, nat, 3].
         # qdif[i,j,0:3] = q_i - q_j
         qdif_ref = q_ref[:, np.newaxis, :] - q_ref[np.newaxis, :, :]
 
@@ -726,9 +725,9 @@ class FFDebyePW(ForceField):
         self.Hpw = np.zeros((nat, nat))
         for i in range(nat):
             for j in range(nat):
+                # k = kx*rx + ky*ry + kz*rz 
                 self.Hpw[i, j] += 0.5 * np.dot(self.H[i, j:j+3], qdir_ref[i, j, :])
-                self.Hpw[j, i] -= 0.5 * np.dot(self.H[i, j:j+3], qdir_ref[i, j, :])
-        
+                self.Hpw[j, i] += 0.5 * np.dot(self.H[i, j:j+3], qdir_ref[i, j, :])
 
     def poll(self):
         """Polls the forcefield checking if there are requests that should
@@ -755,27 +754,27 @@ class FFDebyePW(ForceField):
         nat = len(q)
 
         # Calculate the differences in coordinates. Shape: [nat, nat, 3].
-        # qdif[i,j,0:3] = q_i - q_j
-        qdif = q[:, np.newaxis, :] - q[np.newaxis, :, :]
+        # qij[i,j,0:3] = q_i - q_j
+        qij = q[:, np.newaxis, :] - q[np.newaxis, :, :]
 
         # Calculate the norms (magnitudes) of the displacement vectors
         # this is the distance between pairs of points
-        qpw = np.linalg.norm(qdif, axis=2)
-
+        qpw = np.linalg.norm(qij, axis=2)
         # Create a copy of the norms array
-        # modified_norms = np.copy(qpw)
+        modified_norms = np.copy(qpw)
         # Set the diagonal elements of the modified norms to a small positive value to avoid division by zero
-        # np.fill_diagonal(modified_norms, 1e-8)
+        np.fill_diagonal(modified_norms, 1e-8)
         # Normalize the displacement vectors
-        # qdir = qdif / modified_norms[:, :, np.newaxis]
+        qdir = qdif / modified_norms[:, :, np.newaxis]
 
+        # get the displacement vectors (subtract the equilibrium distances)
+        qdif = np.einsum('ij,ijk->ijk', qpw - self.qpw_ref, qdir)
         dpw = qpw - self.qpw_ref
 
-        f = np.zeros(q.shape)
-        v = self.vref
-        for i in range(nat):
-            f[i] = np.dot(Hpw[i], qdif[i,:])
-            v += 0.5 * np.dot(qpw, np.dot(Hpw[i], qpw[i,:]))
+
+        f = np.einsum('ij,ijk->ijk', Hpw, qdif)
+        dsqr = np.square(qpw-qpw_ref)
+        v = 0.5 * np.einsum('ij,ij->', Hpw, dsqr)
 
         r["result"] = [
             self.vref + v,
