@@ -15,6 +15,7 @@ import json
 import sys
 
 import numpy as np
+from scipy.spatial.distance import pdist
 
 from ipi.utils.softexit import softexit
 from ipi.utils.messages import verbosity
@@ -647,6 +648,142 @@ class FFDebye(ForceField):
             np.zeros((3, 3), float),
             {"raw": ""},
         ]
+        r["status"] = "Done"
+        r["t_finished"] = time.time()
+
+class FFDebyePW(ForceField):
+
+    """Pairwise Debye crystal harmonic reference potential
+
+    Computes a harmonic forcefield that has only two-body interactions between pairs of atoms.
+
+    Attributes:
+       parameters: A dictionary of the parameters used by the driver. Of the
+          form {'name': value}.
+       requests: During the force calculation step this holds a dictionary
+          containing the relevant data for determining the progress of the step.
+          Of the form {'atoms': atoms, 'cell': cell, 'pars': parameters,
+                       'status': status, 'result': result, 'id': bead id,
+                       'start': starting time}.
+    """
+
+    def __init__(
+        self,
+        latency=1.0,
+        name="",
+        H=None,
+        xref=None,
+        vref=0.0,
+        pars=None,
+        dopbc=False,
+        threaded=False,
+    ):
+        """Initialises FFDebye.
+
+        Args:
+           pars: Optional dictionary, giving the parameters needed by the driver.
+        """
+
+        # a socket to the communication library is created or linked
+        # NEVER DO PBC -- forces here are computed without.
+        super(FFDebye, self).__init__(latency, name, pars, dopbc=False)
+
+        if H is None:
+            raise ValueError("Must provide the Hessian for the Debye crystal.")
+        if xref is None:
+            raise ValueError(
+                "Must provide a reference configuration for the Debye crystal."
+            )
+
+        self.H = H
+        self.xref = xref
+        self.vref = vref
+
+        eigsys = np.linalg.eigh(self.H)
+        info(
+            " @ForceField: Hamiltonian eigenvalues: " + " ".join(map(str, eigsys[0])),
+            verbosity.medium,
+        )
+
+        q_ref = np.copy(self.xref).reshape((-1, 3))
+        nat = len(q_ref)
+        # Calculate the differences in coordinates. Shape: [nat, nat, 3].
+        # qdif[i,j,0:3] = q_i - q_j
+        qdif_ref = q_ref[:, np.newaxis, :] - q_ref[np.newaxis, :, :]
+
+        # Calculate the norms (magnitudes) of the displacement vectors
+        # this is the distance between pairs of points
+        self.qpw_ref = np.linalg.norm(qdif_ref, axis=2)
+
+        # Create a copy of the norms array
+        modified_norms = np.copy(qpw_ref)
+        # Set the diagonal elements of the modified norms to a small positive value to avoid division by zero
+        np.fill_diagonal(modified_norms, 1e-8)
+        # Normalize the displacement vectors
+        qdir_ref = qdif_ref / modified_norms[:, :, np.newaxis]
+
+        # this is like the pairwise spring constant
+        self.Hpw = np.zeros((nat, nat))
+        for i in range(nat):
+            for j in range(nat):
+                self.Hpw[i, j] += 0.5 * np.dot(self.H[i, j:j+3], qdir_ref[i, j, :])
+                self.Hpw[j, i] -= 0.5 * np.dot(self.H[i, j:j+3], qdir_ref[i, j, :])
+        
+
+    def poll(self):
+        """Polls the forcefield checking if there are requests that should
+        be answered, and if necessary evaluates the associated forces and energy."""
+
+        # we have to be thread-safe, as in multi-system mode this might get called by many threads at once
+        with self._threadlock:
+            for r in self.requests:
+                if r["status"] == "Queued":
+                    r["status"] = "Running"
+                    self.evaluate(r)
+
+    def evaluate(self, r):
+        """A simple evaluator for a harmonic Debye crystal potential."""
+
+        q = r["pos"]
+        n3 = len(q)
+        if self.H.shape != (n3, n3):
+            raise ValueError("Hessian size mismatch")
+        if self.xref.shape != (n3,):
+            raise ValueError("Reference structure size mismatch")
+
+        q = r["pos"].reshape((-1, 3))
+        nat = len(q)
+
+        # Calculate the differences in coordinates. Shape: [nat, nat, 3].
+        # qdif[i,j,0:3] = q_i - q_j
+        qdif = q[:, np.newaxis, :] - q[np.newaxis, :, :]
+
+        # Calculate the norms (magnitudes) of the displacement vectors
+        # this is the distance between pairs of points
+        qpw = np.linalg.norm(qdif, axis=2)
+
+        # Create a copy of the norms array
+        # modified_norms = np.copy(qpw)
+        # Set the diagonal elements of the modified norms to a small positive value to avoid division by zero
+        # np.fill_diagonal(modified_norms, 1e-8)
+        # Normalize the displacement vectors
+        # qdir = qdif / modified_norms[:, :, np.newaxis]
+
+        dpw = qpw - self.qpw_ref
+
+        f = np.zeros(q.shape)
+        v = self.vref
+        for i in range(nat):
+            f[i] = np.dot(Hpw[i], qdif[i,:])
+            v += 0.5 * np.dot(qpw, np.dot(Hpw[i], qpw[i,:]))
+
+        r["result"] = [
+            self.vref + v,
+            -f,
+            np.zeros((3, 3), float),
+            {"raw": ""},
+        ]
+
         r["status"] = "Done"
         r["t_finished"] = time.time()
 
