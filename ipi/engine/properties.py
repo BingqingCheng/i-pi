@@ -288,12 +288,19 @@ class Properties(dobject):
                 "size": 6,
                 "func": (lambda: np.asarray(h2abc_deg(self.cell.h))),
             },
-            "momentofinertia": {
+            "moment_of_inertia": {
                 "dimension": "length",
                 "help": "The moment of inertia tensor (for isolated molecules).",
-                "longhelp": """The moment of inertia tensor as a matrix, Returns the 6 non-zero components in the form [xx, yy, zz, xy, xz, yz]""",
+                "longhelp": """The moment of inertia tensor as a matrix, Returns the 6 non-zero components in the form [xx, yy, zz, xy, xz, yz].""",
                 "size": 6,
-                "func": self.get_moi,
+                "func": self.get_moi_vec,
+            },
+            "moment_of_inertia_eigval": {
+                "dimension": "length",
+                "help": "The 3 eigenvalues of moment of inertia tensor (for isolated molecules).",
+                "longhelp": """The eigenvalues of the moment of inertia tensor, Returns 3 components.""",
+                "size": 3,
+                "func": self.get_moi_eigval,
             },
             "conserved": {
                 "dimension": "energy",
@@ -1055,30 +1062,73 @@ class Properties(dobject):
 
         return 2.0 * kemd / (Constants.kb * 3.0 * float(ncount) * self.beads.nbeads)
 
-    def get_moi(self):
+    def get_moi_vec(self):
         """ Calculates the moment of inertia tensor.
         """
-        # Computes the centre of mass.
-        com = (
-            np.dot(
-                np.transpose(self.beads.q.reshape((self.beads.natoms, 3))), self.m
-            )
-            / self.m.sum()
-        )
-        qminuscom = self.beads.q.reshape((self.beads.natoms, 3)) - com
-        # Computes the moment of inertia tensor.
-        moi = np.zeros((3, 3), float)
-        for k in range(self.beads.natoms):
+
+        nb = self.beads.nbeads
+        na = self.beads.natoms
+        q = dstrip(self.beads.q)
+        m = dstrip(self.beads.m3)[:, 0::3]
+        # reshape everything into the "standard form"
+        positions = np.zeros((na * nb, 3))
+        masses = np.zeros(na * nb)
+        for b in range(nb):
+            masses[b*na:(b+1)*na] = m[b,:]
+            for i in range(3):
+                positions[b*na:(b+1)*na,i] = self.beads.q[b, i::3]
+
+        # Compute the center of mass
+        center_of_mass = np.sum(positions * masses[:, np.newaxis], axis=0) / np.sum(masses)
+
+        # Compute the relative positions
+        relative_positions = positions - center_of_mass
+
+        # compute the moment of inertia tensor (I)
+        moi = np.zeros((3,3))
+        for i, r in enumerate(relative_positions):
             moi -= (
                 np.dot(
-                    np.cross(qminuscom[k], np.identity(3)),
-                    np.cross(qminuscom[k], np.identity(3)),
+                    np.cross(r, np.identity(3)),
+                    np.cross(r, np.identity(3)),
                 )
-                * self.m[k]
+                * masses[i]
             )
 
-        return moi 
+        return self.tensor2vec(moi)
 
+
+    def get_moi_eigval(self):
+        nb = self.beads.nbeads
+        na = self.beads.natoms
+        q = dstrip(self.beads.q)
+        m = dstrip(self.beads.m3)[:, 0::3]
+        # reshape everything into the "standard form"
+        positions = np.zeros((na * nb, 3))
+        masses = np.zeros(na * nb)
+        for b in range(nb):
+            masses[b*na:(b+1)*na] = m[b,:]
+            for i in range(3):
+                positions[b*na:(b+1)*na,i] = self.beads.q[b, i::3]
+
+        # Compute the center of mass
+        center_of_mass = np.sum(positions * masses[:, np.newaxis], axis=0) / np.sum(masses)
+
+        # Compute the relative positions
+        relative_positions = positions - center_of_mass
+
+        # compute the moment of inertia tensor (I)
+        moi = np.zeros((3,3))
+        for i, r in enumerate(relative_positions):
+            moi -= (
+                np.dot(
+                    np.cross(r, np.identity(3)),
+                    np.cross(r, np.identity(3)),
+                )
+                * masses[i]
+            )
+
+        return np.linalg.eig(moi)[0]
 
     def get_kincv(self, atom=""):
         """Calculates the quantum centroid virial kinetic energy estimator.
