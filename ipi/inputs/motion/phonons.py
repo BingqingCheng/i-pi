@@ -85,8 +85,8 @@ class InputDynMatrix(InputDictionary):
             {
                 "dtype": str,
                 "default": "none",
-                "options": ["none", "poly", "lin", "crystal"],
-                "help": "Removes the zero frequency vibrational modes depending on the symmerty of the system.",
+                "options": ["none", "poly", "lin", "crystal", "polypw"],
+                "help": "Removes the zero frequency vibrational modes depending on the symmetry of the system.",
             },
         ),
         "dynmat": (
