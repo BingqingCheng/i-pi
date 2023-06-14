@@ -154,6 +154,10 @@ class InputSimulation(Input):
             iforcefields.InputFFDebye,
             {"help": iforcefields.InputFFDebye.default_help},
         ),
+        "ffdebyepw": (
+            iforcefields.InputFFDebyePW,
+            {"help": iforcefields.InputFFDebyePW.default_help},
+        ),
         "ffplumed": (
             iforcefields.InputFFPlumed,
             {"help": iforcefields.InputFFPlumed.default_help},
@@ -239,6 +243,10 @@ class InputSimulation(Input):
                     _iobj = iforcefields.InputFFDebye()
                     _iobj.store(_obj)
                     self.extra[_ii] = ("ffdebye", _iobj)
+                elif isinstance(_obj, eforcefields.FFDebyePW):
+                    _iobj = iforcefields.InputFFDebyePW()
+                    _iobj.store(_obj)
+                    self.extra[_ii] = ("ffdebyepw", _iobj)
                 elif isinstance(_obj, eforcefields.FFPlumed):
                     _iobj = iforcefields.InputFFPlumed()
                     _iobj.store(_obj)
@@ -307,6 +315,7 @@ class InputSimulation(Input):
                 k == "ffsocket"
                 or k == "fflj"
                 or k == "ffdebye"
+                or k == "ffdebyepw"
                 or k == "ffdmd"
                 or k == "ffplumed"
                 or k == "ffsgdml"

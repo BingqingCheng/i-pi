@@ -677,7 +677,7 @@ class FFDebyePW(ForceField):
         dopbc=False,
         threaded=False,
     ):
-        """Initialises FFDebye.
+        """Initialises FFDebyePW.
 
         Args:
            pars: Optional dictionary, giving the parameters needed by the driver.
@@ -715,7 +715,7 @@ class FFDebyePW(ForceField):
         self.qpw_ref = np.linalg.norm(qdif_ref, axis=2)
 
         # Create a copy of the norms array
-        modified_norms = np.copy(qpw_ref)
+        modified_norms = np.copy(self.qpw_ref)
         # Set the diagonal elements of the modified norms to a small positive value to avoid division by zero
         np.fill_diagonal(modified_norms, 1e-8)
         # Normalize the displacement vectors
@@ -726,9 +726,9 @@ class FFDebyePW(ForceField):
         for i in range(nat):
             for j in range(i):
                 # [H_rix,rjx, H_riy,rjy, H_riz,rjz]
-                Hxyz = np.array([H_orig[i*3, j*3], H_orig[i*3+1, j*3+1], H_orig[i*3+2, j*3+2]])
+                Hxyz = np.array([self.H[i*3, j*3], self.H[i*3+1, j*3+1], self.H[i*3+2, j*3+2]])
                 k_tmp = -1.0 * np.dot(Hxyz, qdir_ref[i, j, :]**2.)
-                self.Hpw[i, j] = Hpw[j, i] = k_tmp
+                self.Hpw[i, j] = self.Hpw[j, i] = k_tmp
 
     def poll(self):
         """Polls the forcefield checking if there are requests that should
@@ -766,7 +766,7 @@ class FFDebyePW(ForceField):
         # Set the diagonal elements of the modified norms to a small positive value to avoid division by zero
         np.fill_diagonal(modified_norms, 1e-8)
         # Normalize the displacement vectors
-        qdir = qdif / modified_norms[:, :, np.newaxis]
+        qdir = qij / modified_norms[:, :, np.newaxis]
 
         # get the displacement vectors (subtract the equilibrium distances)
         qdif = np.einsum('ij,ijk->ijk', qpw - self.qpw_ref, qdir)
@@ -774,7 +774,7 @@ class FFDebyePW(ForceField):
 
         dpw = qpw - self.qpw_ref
         dsqr = np.square(dpw)
-        v = 0.5 * np.einsum('ij,ij->', Hpw, dsqr) / 2
+        v = 0.5 * np.einsum('ij,ij->', self.Hpw, dsqr) / 2
 
         r["result"] = [
             self.vref + v,

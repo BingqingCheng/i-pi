@@ -13,6 +13,7 @@ from ipi.engine.forcefields import (
     FFSocket,
     FFLennardJones,
     FFDebye,
+    FFDebyePW,
     FFPlumed,
     FFYaff,
     FFsGDML,
@@ -30,6 +31,7 @@ __all__ = [
     "InputFFSocket",
     "InputFFLennardJones",
     "InputFFDebye",
+    "InputFFDebyePW",
     "InputFFPlumed",
     "InputFFYaff",
     "InputFFsGDML",
@@ -484,6 +486,65 @@ class InputFFDebye(InputForceField):
             threaded=self.threaded.fetch(),
         )
 
+class InputFFDebyePW(InputForceField):
+    fields = {
+        "hessian": (
+            InputArray,
+            {
+                "dtype": float,
+                "default": input_default(factory=np.zeros, args=(0,)),
+                "help": "Specifies the Hessian of the harmonic potential. "
+                "Default units are atomic. Units can be specified only by xml attribute. "
+                "Implemented options are: 'atomic_unit', 'ev/ang\^2'",
+                "dimension": "hessian",
+            },
+        ),
+        "x_reference": (
+            InputArray,
+            {
+                "dtype": float,
+                "default": input_default(factory=np.zeros, args=(0,)),
+                "help": "Minimum-energy configuration for the harmonic potential",
+                "dimension": "length",
+            },
+        ),
+        "v_reference": (
+            InputValue,
+            {
+                "dtype": float,
+                "default": 0.0,
+                "help": "Zero-value of energy for the harmonic potential",
+                "dimension": "energy",
+            },
+        ),
+    }
+
+    fields.update(InputForceField.fields)
+
+    attribs = {}
+    attribs.update(InputForceField.attribs)
+
+    default_help = """Harmonic energy (pairwise) calculator """
+    default_label = "FFDEBYEPW"
+
+    def store(self, ff):
+        super(InputFFDebyePW, self).store(ff)
+        self.hessian.store(ff.H)
+        self.x_reference.store(ff.xref)
+        self.v_reference.store(ff.vref)
+
+    def fetch(self):
+        super(InputFFDebyePW, self).fetch()
+
+        return FFDebyePW(
+            H=self.hessian.fetch(),
+            xref=self.x_reference.fetch(),
+            vref=self.v_reference.fetch(),
+            name=self.name.fetch(),
+            latency=self.latency.fetch(),
+            dopbc=self.pbc.fetch(),
+            threaded=self.threaded.fetch(),
+        )
 
 class InputFFPlumed(InputForceField):
     fields = {
@@ -711,6 +772,7 @@ class InputFFCommittee(InputForceField):
         "ffsocket": (InputFFSocket, {"help": InputFFSocket.default_help}),
         "fflj": (InputFFLennardJones, {"help": InputFFLennardJones.default_help}),
         "ffdebye": (InputFFDebye, {"help": InputFFDebye.default_help}),
+        "ffdebyepw": (InputFFDebyePW, {"help": InputFFDebyePW.default_help}),
         "ffplumed": (InputFFPlumed, {"help": InputFFPlumed.default_help}),
         "ffyaff": (InputFFYaff, {"help": InputFFYaff.default_help}),
         "ffsgdml": (InputFFsGDML, {"help": InputFFsGDML.default_help}),
@@ -805,6 +867,10 @@ class InputFFCommittee(InputForceField):
                     _iobj = InputFFDebye()
                     _iobj.store(_obj)
                     self.extra[_ii] = ("ffdebye", _iobj)
+                elif isinstance(_obj, FFDebyePW):
+                    _iobj = InputFFDebyePW()
+                    _iobj.store(_obj)
+                    self.extra[_ii] = ("ffdebyepw", _iobj)
                 elif isinstance(_obj, FFPlumed):
                     _iobj = InputFFPlumed()
                     _iobj.store(_obj)
