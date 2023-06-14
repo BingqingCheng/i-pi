@@ -394,16 +394,13 @@ class DummyIntegrator(dobject):
             # compute the moment of inertia tensor (I)
             moment_of_inertia = np.zeros((3,3))
             for i, r in enumerate(relative_positions):
-                moment_of_inertia[0,0] += (r[1]**2.+r[2]**2.) * masses[i]
-                moment_of_inertia[1,1] += (r[0]**2.+r[2]**2.) * masses[i]
-                moment_of_inertia[2,2] += (r[0]**2.+r[1]**2.) * masses[i]
-                moment_of_inertia[0,1] -= (r[0]*r[1]) * masses[i]
-                moment_of_inertia[0,2] -= (r[0]*r[2]) * masses[i]
-                moment_of_inertia[1,2] -= (r[1]*r[2]) * masses[i]
-
-            moment_of_inertia[1,0] = moment_of_inertia[0,1]
-            moment_of_inertia[2,0] = moment_of_inertia[0,2]
-            moment_of_inertia[2,1] = moment_of_inertia[1,2]
+                moment_of_inertia -= (
+                    np.dot(
+                        np.cross(r, np.identity(3)),
+                        np.cross(r, np.identity(3)),
+                    )
+                    * masses[i]
+                )
 
             #Compute the angular velocity tensor
             angular_velocity = np.dot(np.linalg.inv(moment_of_inertia), angular_momentum)
