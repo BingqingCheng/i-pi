@@ -288,6 +288,13 @@ class Properties(dobject):
                 "size": 6,
                 "func": (lambda: np.asarray(h2abc_deg(self.cell.h))),
             },
+            "momentofinertia": {
+                "dimension": "length",
+                "help": "The moment of inertia tensor (for isolated molecules).",
+                "longhelp": """The moment of inertia tensor as a matrix, Returns the 6 non-zero components in the form [xx, yy, zz, xy, xz, yz]""",
+                "size": 6,
+                "func": self.get_moi,
+            },
             "conserved": {
                 "dimension": "energy",
                 "help": "The value of the conserved energy quantity per bead.",
@@ -1024,7 +1031,7 @@ class Properties(dobject):
             pcm = np.tile(
                 np.sqrt(M * Constants.kb * self.ensemble.temp * self.beads.nbeads), 3
             )
-            vcm = 2 * np.tile(pcm / M, self.beads.natoms)
+            vcm = np.tile(pcm / M, self.beads.natoms)
 
             self.beads.p += self.beads.m3 * vcm
 
@@ -1047,6 +1054,31 @@ class Properties(dobject):
                 self.beads.p[:, 3 * i : 3 * i + 3] = 0.0
 
         return 2.0 * kemd / (Constants.kb * 3.0 * float(ncount) * self.beads.nbeads)
+
+    def get_moi(self):
+        """ Calculates the moment of inertia tensor.
+        """
+        # Computes the centre of mass.
+        com = (
+            np.dot(
+                np.transpose(self.beads.q.reshape((self.beads.natoms, 3))), self.m
+            )
+            / self.m.sum()
+        )
+        qminuscom = self.beads.q.reshape((self.beads.natoms, 3)) - com
+        # Computes the moment of inertia tensor.
+        moi = np.zeros((3, 3), float)
+        for k in range(self.beads.natoms):
+            moi -= (
+                np.dot(
+                    np.cross(qminuscom[k], np.identity(3)),
+                    np.cross(qminuscom[k], np.identity(3)),
+                )
+                * self.m[k]
+            )
+
+        return moi 
+
 
     def get_kincv(self, atom=""):
         """Calculates the quantum centroid virial kinetic energy estimator.
