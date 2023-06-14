@@ -233,7 +233,7 @@ class DynMatrixMover(Motion):
             r = np.dot(transfmatrix.T, np.dot(dm, transfmatrix))
             return r
 
-        elif self.asr == "poly":
+        elif self.asr == "poly" or self.asr == "polypw":
             # Computes the centre of mass.
             com = (
                 np.dot(
@@ -281,8 +281,41 @@ class DynMatrixMover(Motion):
             # Computes the transformation matrix.
             transfmatrix = np.eye(3 * self.beads.natoms) - np.dot(D.T, D)
             r = np.dot(transfmatrix.T, np.dot(dm, transfmatrix))
-            return r
+            if self.asr == "poly": 
+                return r
+            elif self.asr == "polypw":
+                q_ref = self.beads.q.reshape((self.beads.natoms, 3))
+                nat = self.beads.natoms
+                # Calculate the pairwise displacements in Cartesian coordinates. Shape: [nat, nat, 3].
+                # qdif[i,j,0:3] = q_i - q_j
+                qdif_ref = q_ref[:, np.newaxis, :] - q_ref[np.newaxis, :, :]
 
+                # Calculate the norms (magnitudes) of the displacement vectors
+                # this is the distance between pairs of points
+                self.qpw_ref = np.linalg.norm(qdif_ref, axis=2)
+
+                # Create a copy of the norms array
+                modified_norms = np.copy(qpw_ref)
+                # Set the diagonal elements of the modified norms to a small positive value to avoid division by zero
+                np.fill_diagonal(modified_norms, 1e-8)
+                # Normalize the displacement vectors
+                qdir_ref = qdif_ref / modified_norms[:, :, np.newaxis]
+
+                # this is like the pairwise spring constant
+                rpw = np.zeros((3 * nat, 3 * nat))
+                Hpw = np.zeros((nat, nat))
+                for i in range(nat):
+                    for j in range(i):
+                        # [H_rix,rjx, H_riy,rjy, H_riz,rjz]
+                        Hxyz = np.array([r[i*3, j*3], r[i*3+1, j*3+1], r[i*3+2, j*3+2]])
+                        k_tmp = -1.0 * np.dot(Hxyz, qdir_ref[i, j, :]**2.)
+                        Hpw[i, j] = Hpw[j, i] = k_tmp
+                        for k in range(3):
+                            rpw[i*3 + k, i*3 + k] += k_tmp
+                            rpw[j*3 + k, j*3 + k] += k_tmp
+                        rpw[i*3, j*3] = rpw[i*3+1, j*3+1] = rpw[i*3+2, j*3+2] = -1.0 * k_tmp
+                        rpw[j*3, i*3] = rpw[j*3+1, i*3+1] = rpw[j*3+2, i*3+2] = -1.0 * k_tmp
+                return rpw
 
 class DummyPhononCalculator(dobject):
 

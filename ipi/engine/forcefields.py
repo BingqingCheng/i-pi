@@ -724,10 +724,11 @@ class FFDebyePW(ForceField):
         # this is like the pairwise spring constant
         self.Hpw = np.zeros((nat, nat))
         for i in range(nat):
-            for j in range(nat):
-                # k = kx*rx + ky*ry + kz*rz 
-                self.Hpw[i, j] += 0.5 * np.dot(self.H[i, j:j+3], qdir_ref[i, j, :])
-                self.Hpw[j, i] += 0.5 * np.dot(self.H[i, j:j+3], qdir_ref[i, j, :])
+            for j in range(i):
+                # [H_rix,rjx, H_riy,rjy, H_riz,rjz]
+                Hxyz = np.array([H_orig[i*3, j*3], H_orig[i*3+1, j*3+1], H_orig[i*3+2, j*3+2]])
+                k_tmp = -1.0 * np.dot(Hxyz, qdir_ref[i, j, :]**2.)
+                self.Hpw[i, j] = Hpw[j, i] = k_tmp
 
     def poll(self):
         """Polls the forcefield checking if there are requests that should
@@ -769,16 +770,15 @@ class FFDebyePW(ForceField):
 
         # get the displacement vectors (subtract the equilibrium distances)
         qdif = np.einsum('ij,ijk->ijk', qpw - self.qpw_ref, qdir)
+        f = np.einsum('ij,ijk->ik', self.Hpw, qdif)
+
         dpw = qpw - self.qpw_ref
-
-
-        f = np.einsum('ij,ijk->ijk', Hpw, qdif)
-        dsqr = np.square(qpw-qpw_ref)
-        v = 0.5 * np.einsum('ij,ij->', Hpw, dsqr)
+        dsqr = np.square(dpw)
+        v = 0.5 * np.einsum('ij,ij->', Hpw, dsqr) / 2
 
         r["result"] = [
             self.vref + v,
-            -f,
+            -f.flatten(),
             np.zeros((3, 3), float),
             {"raw": ""},
         ]
